@@ -1,24 +1,26 @@
-Since new steam recordings feature on linux captures entire system audio instead of just the game, this wireplumber script will automatically replace sink device steam is listening with wine64-preload
+Steam's game recording on Linux captures the entire system audio instead of just the game. This WirePlumber script makes Steam listen only to the game's audio, for both native and Wine/Proton games.
 
 ## How it works
-When you launch any wine/proton app (binary of "wine64-preloader"), this script then starts looking for any audio input nodes of steam* and disconnects any `Audio/Sink` nodes from it; after that it connects launched wine app to found steam input nodes.
+- A running game is detected by its audio stream's process having `SteamGameId`/`SteamAppId` in its environment (Steam sets these for every game it launches), or by being a Wine preloader binary (`wine64-preloader`, `wine-preloader`).
+- While at least one game is running, Steam's recording input node is unlinked from any sink and linked to the game's output stream(s), matching channels (mono is handled).
+- With no game running, nothing is touched.
+- Several games at once: all their streams are mixed into the recording.
 
 > [!TIP]
-> *Note that this does NOT include any micrphone activites such as steam voice chats, streaming, etc., as those are considered Chromium's RecordStream. Meaning they will be unaffected and continue to work as you expect them to.
-
-### Caveats
-> [!IMPORTANT]
-> - This does NOT work with native games. If you launch native game by itself, it won't do anything, because it expects wine64-preloader binary - steam will still listen to your system audio (imo better than no audio at all).
-> - Launching multiple games at the same time can lead to unexpected behavior; if you mix native and wine games, the behavior will be even more unepexcted and native game will probably have no audio in the recording
-
+> Microphone, voice chat and streaming (Chromium streams) are not affected.
 
 ## Installation
 
-Put 90-steam-wire.conf in your `~/.config/wireplumber/wireplumber.conf.d/` and steam-wire.lua in your `~/.local/share/wireplumber/scripts/` (create if doesn't exists) and restart wireplumber/log out of your session.
+Put `90-steam-game-audio.conf` in `~/.config/wireplumber/wireplumber.conf.d/` and `steam-game-audio.lua` in `~/.local/share/wireplumber/scripts/` (create if they don't exist), then restart WirePlumber:
 
 ```
 systemctl restart --user wireplumber.service
 ```
+
+> [!IMPORTANT]
+> Remove the legacy `90-steam-wire.conf` / `steam-wire.lua` if installed; they do the same job and conflict.
+
+Debug (stop the service first): `WIREPLUMBER_DEBUG=steam-game-audio:5 wireplumber`.
 
 ---
 
