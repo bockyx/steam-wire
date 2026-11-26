@@ -1,22 +1,25 @@
 -- steam-game-audio: make Steam game recordings capture only game audio.
 --
 -- Steam's recorder is a `Stream/Input/Audio` node of the `steam` binary that
--- listens to a sink monitor (whole system audio). While at least one Steam game
--- is running, this script unlinks it from sinks and links it to the game's
+-- listens to a sink monitor (whole system audio). While at least one game is
+-- running, this script unlinks it from sinks and links it to the game's
 -- output streams instead. Works for native and Wine/Proton games.
 --
--- A stream counts as a game if its process has SteamGameId/SteamAppId in its
--- environment (set by Steam for every game it launches), or if its binary is a
--- Wine preloader (covers Wine games launched outside Steam).
+-- WirePlumber's Lua sandbox has no `io`, so games are detected from PipeWire
+-- properties only. A stream counts as a game if any of these holds:
+--   * its binary is a Wine preloader (Proton and plain Wine),
+--   * its `media.role` is "Game" (set by SDL and most native engines),
+--   * its binary is listed in EXTRA_BINARIES below (escape hatch for games
+--     that set no role, e.g. add "mygame").
 
 local log = Log.open_topic("steam-game-audio")
 
 local WINE_BINARIES = { ["wine64-preloader"] = true, ["wine-preloader"] = true }
+local EXTRA_BINARIES = {}
 
 local games = {}  -- node id -> node (game output streams)
 local steams = {} -- node id -> node (Steam recording input streams)
 local made = {}   -- "outPort:inPort" -> { link, out = node id, inn = node id }
-local env_cache = {} -- node id -> boolean
 
 local function id_of(obj)
   return tonumber(obj.properties["object.id"])
@@ -24,33 +27,30 @@ end
 
 ---------------------------------------------------------------- detection
 
-local function has_steam_env(pid)
-  if not pid then return false end
-  local ok, found = pcall(function()
-    local f = io.open("/proc/" .. pid .. "/environ", "rb")
-    if not f then return false end
-    local data = f:read("a") or ""
-    f:close()
-    return data:find("SteamGameId=", 1, true) ~= nil
-        or data:find("SteamAppId=", 1, true) ~= nil
-  end)
-  return ok and found or false
+-- Native PipeWire streams carry only `client.id`; the process info lives on
+-- the client object.
+clients_om = ObjectManager { Interest { type = "client" } }
+
+local function client_props(node)
+  local cid = node.properties["client.id"]
+  if not cid then return {} end
+  local client = clients_om:lookup {
+    Constraint { "object.id", "equals", tostring(cid) },
+  }
+  return client and client.properties or {}
 end
 
 local function is_game(node)
-  local props = node.properties
-  local bin = props["application.process.binary"] or ""
+  local props, cprops = node.properties, client_props(node)
+  local bin = props["application.process.binary"]
+      or cprops["application.process.binary"] or ""
   if bin:find("^steam") then return false end
-  if WINE_BINARIES[bin] then return true end
+  if WINE_BINARIES[bin] or EXTRA_BINARIES[bin] then return true end
 
-  local id = id_of(node)
-  local cached = env_cache[id]
-  if cached == nil then
-    cached = has_steam_env(tonumber(props["application.process.id"]))
-    env_cache[id] = cached
-  end
-  return cached
+  local role = props["media.role"] or cprops["media.role"] or ""
+  return role:lower() == "game"
 end
+
 
 ---------------------------------------------------------------- linking
 
@@ -189,12 +189,22 @@ streams_om:connect("object-added", function(_, node)
 end)
 streams_om:connect("object-removed", function(_, node)
   local id = id_of(node)
-  games[id], env_cache[id] = nil, nil
+  games[id] = nil
   drop_links_of(id)
 end)
 
 ports_om:connect("object-added", function(_, port)
   local node_id = tonumber(port.properties["node.id"])
+  -- Retry detection for streams whose client was unknown when they appeared.
+  if not games[node_id] then
+    local node = streams_om:lookup {
+      Constraint { "object.id", "equals", tostring(node_id) },
+    }
+    if node and is_game(node) then
+      log:info("Game stream detected (on ports): node " .. node_id)
+      games[node_id] = node
+    end
+  end
   if games[node_id] or steams[node_id] then reconcile() end
 end)
 
@@ -204,6 +214,7 @@ end)
 
 log:info("steam-game-audio loaded")
 
+clients_om:activate()
 sinks_om:activate()
 steam_om:activate()
 streams_om:activate()

@@ -3,7 +3,7 @@
 Steam's game recording on Linux captures the entire system audio instead of just the game. This WirePlumber script makes Steam listen only to the game's audio, for both native and Wine/Proton games.
 
 ## How it works
-- A running game is detected by its audio stream's process having `SteamGameId`/`SteamAppId` in its environment (Steam sets these for every game it launches), or by being a Wine preloader binary (`wine64-preloader`, `wine-preloader`).
+- A game's audio stream is detected by being a Wine preloader binary (`wine64-preloader`, `wine-preloader`) or by having `media.role = Game` (set by SDL and most native engines). Games that set neither can be added by binary name in `EXTRA_BINARIES` at the top of `steam-game-audio.lua`.
 - While at least one game is running, Steam's recording input node is unlinked from any sink and linked to the game's output stream(s), matching channels (mono is handled).
 - With no game running, nothing is touched.
 - Several games at once: all their streams are mixed into the recording.
