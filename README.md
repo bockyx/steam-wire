@@ -1,3 +1,5 @@
+> Fork of [steam-wire](https://github.com/Widowan/steam-wire) by Widowan, rewritten as `steam-game-audio`. MIT licensed; original copyright retained in `LICENSE`.
+
 Steam's game recording on Linux captures the entire system audio instead of just the game. This WirePlumber script makes Steam listen only to the game's audio, for both native and Wine/Proton games.
 
 ## How it works
