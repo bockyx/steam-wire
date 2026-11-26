@@ -16,10 +16,11 @@ remove() {
 }
 
 restart() {
-  if systemctl --user is-active --quiet wireplumber.service; then
-    systemctl --user restart wireplumber.service && echo "WirePlumber restarted."
+  # `restart` also starts the unit if it was stopped.
+  if systemctl --user restart wireplumber.service; then
+    echo "WirePlumber (re)started."
   else
-    echo "wireplumber.service not running; restart it or log out/in to apply."
+    echo "Could not start wireplumber.service; start it or log out/in to apply." >&2
   fi
 }
 
